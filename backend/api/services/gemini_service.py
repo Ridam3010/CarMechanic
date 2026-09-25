@@ -120,8 +120,14 @@ class GeminiMechanicService:
             current_parts.append({"text": f"{context_prefix}{new_message}"})
             contents.append({"role": "user", "parts": current_parts})
 
-            # Call Gemini API
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            # Try candidate Gemini models
+            candidate_models = [
+                getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash"),
+                "gemini-flash-latest",
+                "gemini-3.5-flash",
+                "gemini-2.5-flash"
+            ]
+
             payload = {
                 "system_instruction": {
                     "parts": [{"text": SYSTEM_PROMPT}]
@@ -133,24 +139,31 @@ class GeminiMechanicService:
                 }
             }
 
-            resp = requests.post(url, json=payload, timeout=20)
-            if resp.status_code == 200:
-                data = resp.json()
-                bot_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                
-                # Check if enough diagnostic clues gathered to suggest diagnosis CTA
-                is_ready = cls._check_if_diagnosis_ready(history, new_message, bot_text)
-                follow_ups = cls._extract_follow_ups(bot_text, new_message)
+            headers = {
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json"
+            }
 
-                return {
-                    "response": bot_text,
-                    "follow_ups": follow_ups,
-                    "is_diagnosis_ready": is_ready,
-                    "is_ai_generated": True
-                }
-            else:
-                logger.warning(f"Gemini API returned status {resp.status_code}: {resp.text}")
-                return cls._expert_heuristic_chat(history, new_message, car_info, media_items)
+            for model_name in candidate_models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                try:
+                    resp = requests.post(url, headers=headers, json=payload, timeout=12)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        bot_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        is_ready = cls._check_if_diagnosis_ready(history, new_message, bot_text)
+                        follow_ups = cls._extract_follow_ups(bot_text, new_message)
+                        return {
+                            "response": bot_text,
+                            "follow_ups": follow_ups,
+                            "is_diagnosis_ready": is_ready,
+                            "is_ai_generated": True
+                        }
+                except Exception as ex:
+                    logger.warning(f"Failed calling model {model_name}: {ex}")
+
+            # If all model candidates are overloaded or fail, use senior technician heuristic
+            return cls._expert_heuristic_chat(history, new_message, car_info, media_items)
 
         except Exception as e:
             logger.error(f"Gemini API invocation error: {e}")
@@ -179,7 +192,8 @@ class GeminiMechanicService:
 
             prompt_text = f"{DIAGNOSIS_SCHEMA_PROMPT}\n\n{car_str}Conversation History:\n{full_convo}"
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             payload = {
                 "contents": [
                     {"role": "user", "parts": [{"text": prompt_text}]}
@@ -233,7 +247,8 @@ class GeminiMechanicService:
             with open(file_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             prompt = (
                 f"You are a master auto mechanic. Analyze this uploaded {file_type} of a vehicle component or engine issue. "
                 "Describe what mechanical defect, leak, sound, or wear indicator you see/hear, identify the likely component, "
