@@ -291,3 +291,5 @@ Frontend web application will be live at `http://localhost:3000`.
 - **Backend:** Python 3.13, Django 5.2, Django REST Framework, WhiteNoise, Gunicorn.
 - **Database:** SQLite (Relational structure for Sessions, Messages, Media, Reports, Bookings).
 - **AI / LLM:** Google Gemini 1.5/2.0 Flash with Multimodal Vision & Acoustic Analysis.
+#   C a r M e c h a n i c  
+ 
